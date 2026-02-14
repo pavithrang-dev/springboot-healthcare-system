@@ -1,6 +1,6 @@
 # Healthcare Microservices
 
-![Java](https://img.shields.io/badge/Java-17-orange)
+![Java](https://img.shields.io/badge/Java-21-orange)
 ![Spring Boot](https://img.shields.io/badge/SpringBoot-3.x-brightgreen)
 ![Architecture](https://img.shields.io/badge/Architecture-Microservices-blue)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
