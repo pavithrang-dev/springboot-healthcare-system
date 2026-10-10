@@ -1,0 +1,156 @@
+# ============================================================
+# Docker Compose — Orchestrates ALL services with one command
+# ============================================================
+#
+# WHY Docker Compose?
+# Without it, you'd run 4+ separate `docker run` commands with
+# long flags for networks, volumes, env vars, port mappings.
+# Compose declares everything in one YAML file:
+#   docker compose up    → starts everything
+#   docker compose down  → stops everything
+#   docker compose logs  → see all logs in one stream
+#
+# WHEN to use?
+# - Local development (always)
+# - CI/CD test environments
+# - Small single-host deployments
+# - NOT for production multi-host scaling (use Kubernetes/ECS for that)
+
+services:
+
+  # ============================================================
+  # PostgreSQL 17 — The primary database
+  # ============================================================
+  postgres:
+    image: postgres:17-alpine
+    # WHY alpine? ~80MB vs ~400MB for full image. Same PostgreSQL.
+    container_name: healthcare-postgres
+    environment:
+      POSTGRES_DB: healthcare_db
+      POSTGRES_USER: postgres
+      # NOTE: In production, use Docker secrets or a vault.
+      # For local dev/POC, env vars are acceptable.
+      POSTGRES_PASSWORD: rcdev
+    ports:
+      # host:container — access PostgreSQL from your machine (DBeaver, pgAdmin)
+      # In production, you'd REMOVE this to keep the DB internal-only.
+      - "5432:5432"
+    volumes:
+      # Named volume — persists data across container restarts.
+      # WHY? Without this, stopping the container DELETES all data.
+      # Named volumes are managed by Docker and stored at:
+      # Linux: /var/lib/docker/volumes/  Windows: WSL2 VM disk
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - healthcare-net
+    # Health check — other services wait for this before starting
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d healthcare_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  # ============================================================
+  # Apache Kafka (KRaft mode) — Event streaming
+  # ============================================================
+  # WHY KRaft? Kafka 3.5+ supports KRaft (no Zookeeper needed).
+  # Fewer containers, simpler setup, better performance.
+  # Zookeeper is deprecated in Kafka 4.x.
+  kafka:
+    image: apache/kafka:3.9.0
+    container_name: healthcare-kafka
+    environment:
+      # KRaft mode configuration (no Zookeeper)
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+
+      # Listener configuration:
+      # PLAINTEXT  → for containers to talk to Kafka (kafka:9092)
+      # HOST       → for your machine to talk to Kafka (localhost:29092)
+      # CONTROLLER → internal Kafka cluster coordination
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,HOST://0.0.0.0:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+
+      # Auto-create topics when a producer first writes to them.
+      # Convenient for dev. In production, create topics explicitly.
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+      # Generate a random cluster ID for KRaft
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+    ports:
+      - "29092:29092"    # Host access to Kafka
+    networks:
+      - healthcare-net
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # ============================================================
+  # Patient Service — Your Spring Boot application
+  # ============================================================
+  patient-service:
+    build:
+      context: ./patient-service
+      dockerfile: Dockerfile
+    container_name: healthcare-patient-service
+    environment:
+      # These override application.yaml values at runtime.
+      # WHY? The same Docker image works in dev, staging, and prod
+      # by changing ONLY environment variables. This is the
+      # "Twelve-Factor App" methodology (Factor III: Config).
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/healthcare_db
+      # ↑ NOTE: "postgres" here is the SERVICE NAME, not localhost.
+      # Docker's internal DNS resolves "postgres" → container IP.
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: rcdev
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    ports:
+      - "8080:8080"
+    networks:
+      - healthcare-net
+    depends_on:
+      # WHY condition: service_healthy?
+      # Without it, depends_on only waits for the container to START,
+      # not for the service inside to be READY. PostgreSQL takes 5-10s
+      # to initialize. Without health checks, patient-service would
+      # crash with "Connection refused" and you'd need manual restarts.
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    restart: unless-stopped
+
+# ============================================================
+# Networks — Isolated communication channel
+# ============================================================
+# WHY a custom network?
+# Default Docker network doesn't support DNS-based service discovery.
+# With a custom network, containers resolve each other by name:
+#   patient-service → postgres (resolves to 172.18.0.2)
+# Also provides network isolation — other Docker projects can't
+# reach these containers.
+networks:
+  healthcare-net:
+    driver: bridge
+
+# ============================================================
+# Volumes — Persistent storage
+# ============================================================
+# WHY named volumes?
+# Containers are ephemeral — when removed, all data inside is lost.
+# Named volumes persist data independently of container lifecycle.
+# Your database data survives: docker compose down / docker compose up
+# To TRULY delete data: docker compose down -v (the -v flag)
+volumes:
+  postgres-data:

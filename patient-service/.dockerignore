@@ -1,0 +1,46 @@
+# ============================================================
+# .dockerignore — Controls what gets sent to Docker during build
+# ============================================================
+#
+# WHY? When you run `docker build`, Docker sends the entire
+# directory (the "build context") to the Docker daemon.
+# Without .dockerignore:
+#   - target/ folder (~100MB of compiled classes) gets sent
+#   - .git/ history (~50MB+) gets sent
+#   - node_modules/ gets sent
+# This slows down builds AND can leak secrets into images.
+#
+# Think of it as .gitignore but for Docker.
+
+# Build output — we rebuild inside the container
+target/
+
+# Git history — not needed in the image
+.git
+.gitignore
+
+# IDE files
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Docker files (avoid recursive context)
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Documentation
+README.md
+HELP.md
+LICENSE
+
+# Test reports and coverage
+target/site/
+target/surefire-reports/
+target/jacoco.exec

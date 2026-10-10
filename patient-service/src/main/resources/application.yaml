@@ -2,16 +2,34 @@ spring:
   application:
     name: patient-service
   datasource:
-    url: jdbc:postgresql://localhost:5432/healthcare_db
-    username: postgres
-    password: rcdev
+    # ${ENV_VAR:default} syntax — uses env var if set, otherwise falls back to default.
+    # WHY? Same application.yaml works BOTH locally (uses localhost) AND in Docker
+    # (docker-compose sets SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/...).
+    # Spring Boot automatically maps SPRING_DATASOURCE_URL → spring.datasource.url
+    # (dots→underscores, lowercase→uppercase). This is called "relaxed binding".
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/healthcare_db}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:rcdev}
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
       ddl-auto: validate
     show-sql: true
+  kafka:
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
 springdoc:
- api-docs:
-  path: /v3/api-docs
-swagger-ui:
- path: /swagger-ui.html
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+
+    # ── JWT Configuration ──
+    # WHY in YAML and not in Java code?
+    # 1. You can change the secret without recompiling
+    # 2. Different environments (dev/staging/prod) can have different secrets
+    # 3. In production, you'd override these with environment variables:
+    #    JWT_SECRET=... (Spring Boot auto-maps env vars to yaml properties)
+    jwt:
+      secret: ThisIsA256BitSecretKeyForHS256AlgorithmMinimum32Characters!!
+      expiration: 900000   # 15 minutes in milliseconds (15 * 60 * 1000)
