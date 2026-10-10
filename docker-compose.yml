@@ -30,7 +30,7 @@ services:
       POSTGRES_USER: postgres
       # NOTE: In production, use Docker secrets or a vault.
       # For local dev/POC, env vars are acceptable.
-      POSTGRES_PASSWORD: rcdev
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is not set}
     ports:
       # host:container — access PostgreSQL from your machine (DBeaver, pgAdmin)
       # In production, you'd REMOVE this to keep the DB internal-only.
@@ -112,8 +112,8 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/healthcare_db
       # ↑ NOTE: "postgres" here is the SERVICE NAME, not localhost.
       # Docker's internal DNS resolves "postgres" → container IP.
-      SPRING_DATASOURCE_USERNAME: postgres
-      SPRING_DATASOURCE_PASSWORD: rcdev
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:?SPRING_DATASOURCE_PASSWORD is not set}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is not set}
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     ports:
       - "8080:8080"
